@@ -1,0 +1,180 @@
+from abc import ABC, abstractmethod
+import numpy as np
+import random
+import matplotlib.pyplot as plt
+
+class Node:
+    def __init__(self, index: int, value: float) -> None:
+        self.index = index
+        self.initial_value = value
+        self.value = value
+        self.neighbours : list['Node'] = []
+
+    def add_neighbour(self, neighbour: 'Node') -> None:
+        self.neighbours.append(neighbour)
+
+    def __str__(self) -> str:
+        return f"Index: {self.index}, Value: {self.value:.4f}, Neighbours: {[node.index for node in self.neighbours]}"
+
+
+class Network(ABC):
+    def __init__(self) -> None:
+        self.nodes = self._create_network_nodes()
+        self.true_average = self._calculate_true_average()
+
+    def _create_network_nodes(self) -> list[Node]:
+        n_nodes = random.randint(10,100)
+        network : list[Node] = []
+
+        for i in range(n_nodes):
+            if len(network) == 0:
+                new_node = Node(i, random.randint(10, 100))
+                network.append(new_node)
+                continue
+
+            connected_node = random.choice(network)
+            new_node = Node(i, random.randint(10, 100))
+            connected_node.add_neighbour(new_node)
+            new_node.add_neighbour(connected_node)
+            network.append(new_node)
+        
+        return network
+    
+    def _calculate_true_average(self) -> float:
+        sum = 0
+        for node in self.nodes:
+            sum += node.initial_value
+        
+        return sum / len(self.nodes)
+    
+    def share_random_numbers(self) -> None:
+        shared_pairs = set() 
+        
+        for node in self.nodes:
+            for neighbour in node.neighbours:
+                if (node.index, neighbour.index) not in shared_pairs and \
+                   (neighbour.index, node.index) not in shared_pairs:
+                    
+                    random_number = random.randint(10, 100)
+                    
+                    node.value -= random_number
+                    neighbour.value += random_number
+                    
+                    shared_pairs.add((node.index, neighbour.index))
+
+    @abstractmethod
+    def get_weight_matrix(self):
+        pass
+
+    @abstractmethod
+    def exchange(self):
+        pass
+
+    def get_max_error(self) -> float:
+        """Calculates the maximum error among all nodes."""
+        current_values = np.array([node.value for node in self.nodes])
+        # Max difference between any node value and the true average
+        return np.max(np.abs(current_values - self.true_average))
+
+
+class SynchronousNetwork(Network):
+    def __init__(self) -> None:
+        super().__init__()
+        self.weight_matrix = self.get_weight_matrix()
+
+    def exchange(self) -> None:
+        """
+        Performs one synchronous consensus step: x(t+1) = W * x(t).
+        """
+        # 1. Get the vector of current values x(t)
+        current_values = np.array([node.value for node in self.nodes])
+        
+        # 2. Calculate the new values x(t+1) = W * x(t)
+        new_values = self.weight_matrix @ current_values
+        
+        # 3. Update the node values (synchronous update)
+        for i, node in enumerate(self.nodes):
+            node.value = new_values[i]
+
+    def get_weight_matrix(self) -> np.array:
+        degree_matrix = self._get_degree_matrix()
+        adjacency_matrix = self._get_adjacency_matrix()
+        laplacian_matrix = degree_matrix - adjacency_matrix
+        eigenvalues = np.linalg.eigvalsh(laplacian_matrix)
+        lambda_max = eigenvalues[-1]
+        if lambda_max < 1e-6:
+            # Handle the trivial case (e.g., a single node or a tiny graph)
+            alpha = 0.5 
+        else:
+            # The standard choice for optimal stability/rate
+            alpha = 1.0 / lambda_max
+
+        identity_matrix = np.identity(len(degree_matrix))
+        return identity_matrix - (alpha * laplacian_matrix)
+        
+
+    def _get_degree_matrix(self) -> np.array:
+        n_nodes = len(self.nodes)
+        D = np.zeros((n_nodes, n_nodes))
+        
+        for node in self.nodes:
+            index = node.index
+            degree = len(node.neighbours)
+            D[index, index] = degree
+        
+        return D
+    
+    def _get_adjacency_matrix(self) -> np.array:
+        n_nodes = len(self.nodes)
+        A = np.zeros((n_nodes, n_nodes))
+        
+        for node in self.nodes:
+            for neighbour in node.neighbours:
+                A[node.index, neighbour.index] = 1
+
+        return A
+
+if __name__ == "__main__":
+    synchronous_network = SynchronousNetwork()
+    true_average = synchronous_network._calculate_true_average()
+    synchronous_network.share_random_numbers()
+
+    MAX_ITERATIONS = 10000
+    CONVERGENCE_TOLERANCE = 1e-4
+    
+    errors = []
+    
+    print(f"Total Nodes: {len(synchronous_network.nodes)}")
+    print(f"True Average (based on initial values): {synchronous_network.true_average:.4f}")
+    
+    # 4. Iterative Consensus
+    for t in range(MAX_ITERATIONS):
+        # Perform synchronous exchange
+        synchronous_network.exchange()
+        
+        # Calculate error (difference of the true average and the computed one)
+        max_error = synchronous_network.get_max_error()
+        errors.append(max_error)
+        
+        # Check for convergence
+        if max_error < CONVERGENCE_TOLERANCE:
+            print(f"Convergence achieved at iteration {t+1}")
+            break
+
+    # 5. Convergence Visualization
+    plt.figure(figsize=(10, 6))
+    plt.plot(errors)
+    plt.yscale('log') # Log scale is typical for plotting convergence error
+    plt.title('Synchronous Average Consensus Convergence')
+    plt.xlabel('Iteration (t)')
+    plt.ylabel(r'Max Error $|\mathbf{x}(t) - \mu|$ (Log Scale)')
+    plt.grid(True, which="both", ls="--")
+    plt.show()
+    
+    # Final verification
+    final_average = np.mean([node.value for node in synchronous_network.nodes])
+    print("\n--- Final Results ---")
+    print(f"Final Max Error: {errors[-1]:.6e}")
+    print(f"Calculated Final Average: {final_average:.4f}")
+    print(f"True Average: {synchronous_network.true_average:.4f}")
+    print(f"Total iterations: {len(errors)}")
