@@ -14,10 +14,10 @@ class Node:
         self.index = index
         self.initial_value = value
         self.value = value
-        self.neighbours : list['Node'] = []
+        self.neighbours: set['Node'] = set()
 
     def add_neighbour(self, neighbour: 'Node') -> None:
-        self.neighbours.append(neighbour)
+        self.neighbours.add(neighbour)
 
     def __str__(self) -> str:
         return f"Index: {self.index}, Value: {self.value:.4f}, Neighbours: {[node.index for node in self.neighbours]}"
