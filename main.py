@@ -6,7 +6,8 @@ import matplotlib.pyplot as plt
 
 class Topology(Enum):
     RING = 1,
-    TREE = 2
+    TREE = 2,
+    MESH = 3
 
 
 class Node:
@@ -33,6 +34,8 @@ class Network(ABC):
             return self._create_tree_topology()
         elif topology == Topology.RING:
             return self._create_ring_topology()
+        elif topology == Topology.MESH:
+            return self._create_mesh_topology()
         
     def _create_tree_topology(self):
         n_nodes = random.randint(10,100)
@@ -72,6 +75,23 @@ class Network(ABC):
         last = network[-1]
         first.add_neighbour(last)
         last.add_neighbour(first)
+        
+        return network
+    
+
+    def _create_mesh_topology(self):
+        n_nodes = random.randint(10,100)
+        network : list[Node] = []
+
+        for i in range(n_nodes):
+            if len(network) == 0:
+                new_node = Node(i, random.randint(10, 100))
+                network.append(new_node)
+                continue
+            
+            for node in network:
+                node.add_neighbour(new_node)
+                new_node.add_neighbour(node)
         
         return network
 
