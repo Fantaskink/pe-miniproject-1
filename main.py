@@ -1,7 +1,13 @@
 from abc import ABC, abstractmethod
+from enum import Enum
 import numpy as np
 import random
 import matplotlib.pyplot as plt
+
+class Topology(Enum):
+    RING = 1,
+    TREE = 2
+
 
 class Node:
     def __init__(self, index: int, value: float) -> None:
@@ -18,11 +24,17 @@ class Node:
 
 
 class Network(ABC):
-    def __init__(self) -> None:
-        self.nodes = self._create_network_nodes()
+    def __init__(self, topology: Topology) -> None:
+        self.nodes = self._create_network_nodes(topology)
         self.true_average = self._calculate_true_average()
 
-    def _create_network_nodes(self) -> list[Node]:
+    def _create_network_nodes(self, topology: Topology) -> list[Node]:
+        if topology == Topology.TREE:
+            return self._create_tree_topology()
+        elif topology == Topology.RING:
+            return self._create_ring_topology()
+        
+    def _create_tree_topology(self):
         n_nodes = random.randint(10,100)
         network : list[Node] = []
 
@@ -39,6 +51,30 @@ class Network(ABC):
             network.append(new_node)
         
         return network
+    
+    def _create_ring_topology(self):
+        n_nodes = random.randint(10,100)
+        network : list[Node] = []
+
+        for i in range(n_nodes):
+            if len(network) == 0:
+                new_node = Node(i, random.randint(10, 100))
+                network.append(new_node)
+                continue
+
+            last_node = network[-1]
+            new_node = Node(i, random.randint(10, 100))
+            last_node.add_neighbour(new_node)
+            new_node.add_neighbour(last_node)
+            network.append(new_node)
+
+        first = network[0]
+        last = network[-1]
+        first.add_neighbour(last)
+        last.add_neighbour(first)
+        
+        return network
+
     
     def _calculate_true_average(self) -> float:
         sum = 0
@@ -78,8 +114,8 @@ class Network(ABC):
 
 
 class SynchronousNetwork(Network):
-    def __init__(self) -> None:
-        super().__init__()
+    def __init__(self, topology: Topology) -> None:
+        super().__init__(topology)
         self.weight_matrix = self.get_weight_matrix()
 
     def exchange(self) -> None:
@@ -135,7 +171,7 @@ class SynchronousNetwork(Network):
         return A
 
 if __name__ == "__main__":
-    synchronous_network = SynchronousNetwork()
+    synchronous_network = SynchronousNetwork(Topology.TREE)
     true_average = synchronous_network._calculate_true_average()
     synchronous_network.share_random_numbers()
 
