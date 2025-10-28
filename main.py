@@ -7,7 +7,8 @@ import matplotlib.pyplot as plt
 class Topology(Enum):
     RING = 1,
     TREE = 2,
-    MESH = 3
+    MESH = 3,
+    STAR = 4
 
 
 class Node:
@@ -36,6 +37,8 @@ class Network(ABC):
             return self._create_ring_topology()
         elif topology == Topology.MESH:
             return self._create_mesh_topology()
+        elif topology == Topology.STAR:
+            return self._create_star_topology()
         
     def _create_tree_topology(self):
         n_nodes = random.randint(10,100)
@@ -60,16 +63,12 @@ class Network(ABC):
         network : list[Node] = []
 
         for i in range(n_nodes):
-            if len(network) == 0:
-                new_node = Node(i, random.randint(10, 100))
-                network.append(new_node)
-                continue
-
-            last_node = network[-1]
             new_node = Node(i, random.randint(10, 100))
+            network.append(new_node)
+            last_node = network[-1]
             last_node.add_neighbour(new_node)
             new_node.add_neighbour(last_node)
-            network.append(new_node)
+            
 
         first = network[0]
         last = network[-1]
@@ -78,20 +77,33 @@ class Network(ABC):
         
         return network
     
-
     def _create_mesh_topology(self):
         n_nodes = random.randint(10,100)
         network : list[Node] = []
 
         for i in range(n_nodes):
-            if len(network) == 0:
-                new_node = Node(i, random.randint(10, 100))
-                network.append(new_node)
-                continue
+            new_node = Node(i, random.randint(10, 100))
+            network.append(new_node)
             
             for node in network:
                 node.add_neighbour(new_node)
                 new_node.add_neighbour(node)
+        
+        return network
+    
+    def _create_star_topology(self):
+        n_nodes = random.randint(10,100)
+        network : list[Node] = []
+
+        for i in range(n_nodes):    
+            new_node = Node(i, random.randint(10, 100))
+            network.append(new_node)
+            
+        random_node = random.choice(network)
+
+        for node in network:
+            node.add_neighbour(random_node)
+            random_node.add_neighbour(node)
         
         return network
 
