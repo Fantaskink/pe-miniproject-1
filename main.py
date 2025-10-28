@@ -64,12 +64,16 @@ class Network(ABC):
 
         for i in range(n_nodes):
             new_node = Node(i, random.randint(10, 100))
-            network.append(new_node)
-            last_node = network[-1]
-            last_node.add_neighbour(new_node)
-            new_node.add_neighbour(last_node)
             
+            # FIX 1: Only connect if network is not empty
+            if network:
+                last_node = network[-1]
+                last_node.add_neighbour(new_node)
+                new_node.add_neighbour(last_node)
+                
+            network.append(new_node) # Append the new node here
 
+        # Connect the last node to the first node to close the ring
         first = network[0]
         last = network[-1]
         first.add_neighbour(last)
@@ -83,11 +87,13 @@ class Network(ABC):
 
         for i in range(n_nodes):
             new_node = Node(i, random.randint(10, 100))
-            network.append(new_node)
             
-            for node in network:
-                node.add_neighbour(new_node)
-                new_node.add_neighbour(node)
+            # Connect the new node to ALL existing nodes
+            for existing_node in network:
+                existing_node.add_neighbour(new_node)
+                new_node.add_neighbour(existing_node)
+                
+            network.append(new_node) # Add the new node to the list of existing nodes
         
         return network
     
@@ -99,11 +105,14 @@ class Network(ABC):
             new_node = Node(i, random.randint(10, 100))
             network.append(new_node)
             
-        random_node = random.choice(network)
+        # Choose the central hub node
+        hub_node = random.choice(network) 
 
         for node in network:
-            node.add_neighbour(random_node)
-            random_node.add_neighbour(node)
+            # FIX: Skip connecting the hub node to itself
+            if node is not hub_node:
+                node.add_neighbour(hub_node)
+                hub_node.add_neighbour(node)
         
         return network
 
@@ -203,7 +212,7 @@ class SynchronousNetwork(Network):
         return A
 
 if __name__ == "__main__":
-    synchronous_network = SynchronousNetwork(Topology.TREE)
+    synchronous_network = SynchronousNetwork(Topology.STAR)
     true_average = synchronous_network._calculate_true_average()
     synchronous_network.share_random_numbers()
 
