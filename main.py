@@ -140,10 +140,6 @@ class Network(ABC):
                     shared_pairs.add((node.index, neighbour.index))
 
     @abstractmethod
-    def get_weight_matrix(self):
-        pass
-
-    @abstractmethod
     def exchange(self):
         pass
 
@@ -210,27 +206,52 @@ class SynchronousNetwork(Network):
                 A[node.index, neighbour.index] = 1
 
         return A
+    
+class AsynchronousNetwork(Network):
+    def __init__(self, topology: Topology) -> None:
+        super().__init__(topology)
+
+    def exchange(self):
+        random_node = random.choice(self.nodes)
+        random_neighbour = random.choice(list(random_node.neighbours))
+
+        average = 0.5 * (random_node.value + random_neighbour.value)
+
+        random_node.value = average
+        random_neighbour.value = average
+
 
 if __name__ == "__main__":
-    synchronous_network = SynchronousNetwork(Topology.STAR)
-    true_average = synchronous_network._calculate_true_average()
-    synchronous_network.share_random_numbers()
+    topology = Topology.TREE
 
-    MAX_ITERATIONS = 10000
+    USE_ASYNC = False
+    
+    if USE_ASYNC:
+        network = AsynchronousNetwork(topology)
+        title = "Asynchronous Average Consensus Convergence"
+    else:
+        network = SynchronousNetwork(topology)
+        title = "Synchronous Average Consensus Convergence"
+
+    true_average = network._calculate_true_average()
+    network.share_random_numbers()
+
+    MAX_ITERATIONS = 100000
     CONVERGENCE_TOLERANCE = 1e-4
     
     errors = []
     
-    print(f"Total Nodes: {len(synchronous_network.nodes)}")
-    print(f"True Average (based on initial values): {synchronous_network.true_average:.4f}")
+    print(f"Topology: {topology}")
+    print(f"Total Nodes: {len(network.nodes)}")
+    print(f"True Average (based on initial values): {network.true_average:.4f}")
     
     # 4. Iterative Consensus
     for t in range(MAX_ITERATIONS):
         # Perform synchronous exchange
-        synchronous_network.exchange()
+        network.exchange()
         
         # Calculate error (difference of the true average and the computed one)
-        max_error = synchronous_network.get_max_error()
+        max_error = network.get_max_error()
         errors.append(max_error)
         
         # Check for convergence
@@ -242,16 +263,16 @@ if __name__ == "__main__":
     plt.figure(figsize=(10, 6))
     plt.plot(errors)
     plt.yscale('log') # Log scale is typical for plotting convergence error
-    plt.title('Synchronous Average Consensus Convergence')
+    plt.title(title)
     plt.xlabel('Iteration (t)')
     plt.ylabel(r'Max Error $|\mathbf{x}(t) - \mu|$ (Log Scale)')
     plt.grid(True, which="both", ls="--")
     plt.show()
     
     # Final verification
-    final_average = np.mean([node.value for node in synchronous_network.nodes])
+    final_average = np.mean([node.value for node in network.nodes])
     print("\n--- Final Results ---")
     print(f"Final Max Error: {errors[-1]:.6e}")
     print(f"Calculated Final Average: {final_average:.4f}")
-    print(f"True Average: {synchronous_network.true_average:.4f}")
+    print(f"True Average: {network.true_average:.4f}")
     print(f"Total iterations: {len(errors)}")
