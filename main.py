@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 class Topology(Enum):
     RING = 1,
     TREE = 2,
-    MESH = 3,
+    COMPLETE = 3,
     STAR = 4
 
 
@@ -35,8 +35,8 @@ class Network(ABC):
             return self._create_tree_topology()
         elif topology == Topology.RING:
             return self._create_ring_topology()
-        elif topology == Topology.MESH:
-            return self._create_mesh_topology()
+        elif topology == Topology.COMPLETE:
+            return self._create_complete_topology()
         elif topology == Topology.STAR:
             return self._create_star_topology()
         
@@ -81,7 +81,7 @@ class Network(ABC):
         
         return network
     
-    def _create_mesh_topology(self):
+    def _create_complete_topology(self):
         n_nodes = random.randint(10,100)
         network : list[Node] = []
 
@@ -222,7 +222,7 @@ class AsynchronousNetwork(Network):
 
 
 if __name__ == "__main__":
-    topology = Topology.TREE
+    topology = Topology.COMPLETE
 
     USE_ASYNC = False
     
