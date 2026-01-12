@@ -26,7 +26,8 @@ class Node:
 
 
 class Network(ABC):
-    def __init__(self, topology: Topology) -> None:
+    def __init__(self, topology: Topology, n_nodes: int | None = None) -> None:
+        self._n_nodes = n_nodes if n_nodes is not None else random.randint(10, 100)
         self.nodes = self._create_network_nodes(topology)
         self.true_average = self._calculate_true_average()
 
@@ -41,7 +42,7 @@ class Network(ABC):
             return self._create_star_topology()
         
     def _create_tree_topology(self):
-        n_nodes = random.randint(10,100)
+        n_nodes = self._n_nodes
         network : list[Node] = []
 
         for i in range(n_nodes):
@@ -59,7 +60,7 @@ class Network(ABC):
         return network
     
     def _create_ring_topology(self):
-        n_nodes = random.randint(10,100)
+        n_nodes = self._n_nodes
         network : list[Node] = []
 
         for i in range(n_nodes):
@@ -82,7 +83,7 @@ class Network(ABC):
         return network
     
     def _create_complete_topology(self):
-        n_nodes = random.randint(10,100)
+        n_nodes = self._n_nodes
         network : list[Node] = []
 
         for i in range(n_nodes):
@@ -98,7 +99,7 @@ class Network(ABC):
         return network
     
     def _create_star_topology(self):
-        n_nodes = random.randint(10,100)
+        n_nodes = self._n_nodes
         network : list[Node] = []
 
         for i in range(n_nodes):    
@@ -151,8 +152,8 @@ class Network(ABC):
 
 
 class SynchronousNetwork(Network):
-    def __init__(self, topology: Topology) -> None:
-        super().__init__(topology)
+    def __init__(self, topology: Topology, n_nodes: int | None = None) -> None:
+        super().__init__(topology, n_nodes)
         self.weight_matrix = self.get_weight_matrix()
 
     def exchange(self) -> None:
@@ -175,7 +176,7 @@ class SynchronousNetwork(Network):
         laplacian_matrix = degree_matrix - adjacency_matrix
         
         d_max = np.max(np.diag(degree_matrix)) # Largest value in the degree matrix
-        alpha = 1 / (d_max + 1) 
+        alpha = 1 / (d_max + 1)
 
         identity_matrix = np.identity(len(degree_matrix))
         return identity_matrix - (alpha * laplacian_matrix)
@@ -203,8 +204,8 @@ class SynchronousNetwork(Network):
         return A
     
 class AsynchronousNetwork(Network):
-    def __init__(self, topology: Topology) -> None:
-        super().__init__(topology)
+    def __init__(self, topology: Topology, n_nodes: int | None = None) -> None:
+        super().__init__(topology, n_nodes)
 
     def exchange(self):
         random_node = random.choice(self.nodes)
@@ -218,14 +219,15 @@ class AsynchronousNetwork(Network):
 
 if __name__ == "__main__":
     topology = Topology.RING
+    N_NODES = 50  # number of nodes in the network (configurable)
 
     USE_ASYNC = False
     
     if USE_ASYNC:
-        network = AsynchronousNetwork(topology)
+        network = AsynchronousNetwork(topology, N_NODES)
         title = "Asynchronous Average Consensus Convergence"
     else:
-        network = SynchronousNetwork(topology)
+        network = SynchronousNetwork(topology, N_NODES)
         title = "Synchronous Average Consensus Convergence"
 
     true_average = network._calculate_true_average()
