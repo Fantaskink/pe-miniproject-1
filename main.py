@@ -221,55 +221,69 @@ if __name__ == "__main__":
     topology = Topology.RING
     N_NODES = 50  # number of nodes in the network (configurable)
 
-    USE_ASYNC = False
-    
-    if USE_ASYNC:
-        network = AsynchronousNetwork(topology, N_NODES)
-        title = "Asynchronous Average Consensus Convergence"
-    else:
-        network = SynchronousNetwork(topology, N_NODES)
-        title = "Synchronous Average Consensus Convergence"
-
-    true_average = network._calculate_true_average()
-    network.share_random_numbers()
-
     MAX_ITERATIONS = 100000
     CONVERGENCE_TOLERANCE = 1e-4
-    
-    errors = []
-    
+
+    # Create both networks (they will be synchronized to the same initial state)
+    sync_network = SynchronousNetwork(topology, N_NODES)
+    async_network = AsynchronousNetwork(topology, N_NODES)
+
+    # Ensure both networks start from the same initial values
+    initial_values = [node.initial_value for node in sync_network.nodes]
+    for i, val in enumerate(initial_values):
+        sync_network.nodes[i].initial_value = val
+        sync_network.nodes[i].value = val
+        async_network.nodes[i].initial_value = val
+        async_network.nodes[i].value = val
+
+    # True average is based on the initial values
+    true_average = np.mean(initial_values)
+    sync_network.true_average = true_average
+    async_network.true_average = true_average
+
+    # Apply the same single random-sharing step and copy results so both start identically
+    sync_network.share_random_numbers()
+    for i, node in enumerate(sync_network.nodes):
+        async_network.nodes[i].value = node.value
+
     print(f"Topology: {topology}")
-    print(f"Total Nodes: {len(network.nodes)}")
-    print(f"True Average (based on initial values): {network.true_average:.4f}")
-    
-    # 4. Iterative Consensus
+    print(f"Total Nodes: {len(sync_network.nodes)}")
+    print(f"True Average (based on initial values): {true_average:.4f}")
+
+    errors_sync = []
+    errors_async = []
+
+    # Iteratively run both algorithms 'at the same time' (one step per iteration)
     for t in range(MAX_ITERATIONS):
-        # Perform synchronous exchange
-        network.exchange()
-        
-        # Calculate error (difference of the true average and the computed one)
-        max_error = network.get_max_error()
-        errors.append(max_error)
-        
-        # Check for convergence
-        if max_error < CONVERGENCE_TOLERANCE:
-            print(f"Convergence achieved at iteration {t+1}")
+        sync_network.exchange()
+        async_network.exchange()
+
+        errors_sync.append(sync_network.get_max_error())
+        errors_async.append(async_network.get_max_error())
+
+        if errors_sync[-1] < CONVERGENCE_TOLERANCE and errors_async[-1] < CONVERGENCE_TOLERANCE:
+            print(f"Both converged at iteration {t+1}")
             break
 
-    # 5. Convergence Visualization
+    # Plot both convergence curves on the same figure
     plt.figure(figsize=(10, 6))
-    plt.plot(errors)
-    plt.yscale('log') # Log scale is typical for plotting convergence error
-    plt.title(title)
+    plt.plot(errors_sync, label='Synchronous')
+    plt.plot(errors_async, label='Asynchronous')
+    plt.yscale('log')
+    plt.title('Synchronous vs Asynchronous Average Consensus Convergence')
     plt.xlabel('Iteration (t)')
     plt.ylabel(r'Max Error $|\mathbf{x}(t) - \mu|$ (Log Scale)')
+    plt.legend()
     plt.grid(True, which="both", ls="--")
     plt.show()
-    
+
     # Final verification
-    final_average = np.mean([node.value for node in network.nodes])
+    final_average_sync = np.mean([node.value for node in sync_network.nodes])
+    final_average_async = np.mean([node.value for node in async_network.nodes])
     print("\n--- Final Results ---")
-    print(f"Final Max Error: {errors[-1]:.6e}")
-    print(f"Calculated Final Average: {final_average:.4f}")
-    print(f"True Average: {network.true_average:.4f}")
-    print(f"Total iterations: {len(errors)}")
+    print(f"Synchronous Final Max Error: {errors_sync[-1]:.6e}")
+    print(f"Asynchronous Final Max Error: {errors_async[-1]:.6e}")
+    print(f"Synchronous Final Average: {final_average_sync:.4f}")
+    print(f"Asynchronous Final Average: {final_average_async:.4f}")
+    print(f"True Average: {true_average:.4f}")
+    print(f"Total iterations: {len(errors_sync)}")
