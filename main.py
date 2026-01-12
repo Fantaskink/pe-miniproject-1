@@ -173,14 +173,9 @@ class SynchronousNetwork(Network):
         degree_matrix = self._get_degree_matrix()
         adjacency_matrix = self._get_adjacency_matrix()
         laplacian_matrix = degree_matrix - adjacency_matrix
-        eigenvalues = np.linalg.eigvalsh(laplacian_matrix)
-        lambda_max = eigenvalues[-1]
-        if lambda_max < 1e-6:
-            # Handle the trivial case (e.g., a single node or a tiny graph)
-            alpha = 0.5 
-        else:
-            # The standard choice for optimal stability/rate
-            alpha = 1.0 / lambda_max
+        
+        d_max = np.max(np.diag(degree_matrix)) # Largest value in the degree matrix
+        alpha = 1 / (d_max + 1) 
 
         identity_matrix = np.identity(len(degree_matrix))
         return identity_matrix - (alpha * laplacian_matrix)
@@ -222,7 +217,7 @@ class AsynchronousNetwork(Network):
 
 
 if __name__ == "__main__":
-    topology = Topology.COMPLETE
+    topology = Topology.RING
 
     USE_ASYNC = False
     
