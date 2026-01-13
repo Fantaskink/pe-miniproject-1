@@ -26,8 +26,9 @@ class Node:
 
 
 class Network(ABC):
-    def __init__(self, topology: Topology, n_nodes: int | None = None) -> None:
+    def __init__(self, topology: Topology, n_nodes: int | None = None, value_range: tuple[int, int] = (10, 100)) -> None:
         self._n_nodes = n_nodes if n_nodes is not None else random.randint(10, 100)
+        self._value_range = value_range
         self.nodes = self._create_network_nodes(topology)
         self.true_average = self._calculate_true_average()
 
@@ -47,12 +48,12 @@ class Network(ABC):
 
         for i in range(n_nodes):
             if len(network) == 0:
-                new_node = Node(i, random.randint(10, 100))
+                new_node = Node(i, random.randint(self._value_range[0], self._value_range[1]))
                 network.append(new_node)
                 continue
 
             connected_node = random.choice(network)
-            new_node = Node(i, random.randint(10, 100))
+            new_node = Node(i, random.randint(self._value_range[0], self._value_range[1]))
             connected_node.add_neighbour(new_node)
             new_node.add_neighbour(connected_node)
             network.append(new_node)
@@ -64,7 +65,7 @@ class Network(ABC):
         network : list[Node] = []
 
         for i in range(n_nodes):
-            new_node = Node(i, random.randint(10, 100))
+            new_node = Node(i, random.randint(self._value_range[0], self._value_range[1]))
             
             # FIX 1: Only connect if network is not empty
             if network:
@@ -87,7 +88,7 @@ class Network(ABC):
         network : list[Node] = []
 
         for i in range(n_nodes):
-            new_node = Node(i, random.randint(10, 100))
+            new_node = Node(i, random.randint(self._value_range[0], self._value_range[1]))
             
             # Connect the new node to ALL existing nodes
             for existing_node in network:
@@ -103,7 +104,7 @@ class Network(ABC):
         network : list[Node] = []
 
         for i in range(n_nodes):    
-            new_node = Node(i, random.randint(10, 100))
+            new_node = Node(i, random.randint(self._value_range[0], self._value_range[1]))
             network.append(new_node)
             
         # Choose the central hub node
@@ -152,8 +153,8 @@ class Network(ABC):
 
 
 class SynchronousNetwork(Network):
-    def __init__(self, topology: Topology, n_nodes: int | None = None) -> None:
-        super().__init__(topology, n_nodes)
+    def __init__(self, topology: Topology, n_nodes: int | None = None, value_range: tuple[int, int] = (10, 100)) -> None:
+        super().__init__(topology, n_nodes, value_range)
         self.weight_matrix = self.get_weight_matrix()
 
     def exchange(self) -> None:
@@ -204,8 +205,8 @@ class SynchronousNetwork(Network):
         return A
     
 class AsynchronousNetwork(Network):
-    def __init__(self, topology: Topology, n_nodes: int | None = None) -> None:
-        super().__init__(topology, n_nodes)
+    def __init__(self, topology: Topology, n_nodes: int | None = None, value_range: tuple[int, int] = (10, 100)) -> None:
+        super().__init__(topology, n_nodes, value_range)
 
     def exchange(self):
         random_node = random.choice(self.nodes)
@@ -218,16 +219,18 @@ class AsynchronousNetwork(Network):
 
 
 if __name__ == "__main__":
-    topology = Topology.RING
-    N_NODES = 10 
+    topology = Topology.STAR
+    N_NODES = 30
+    # Set the constant range for generating each node's initial value
+    VALUE_RANGE = (10, 10000000)
     MAX_ITERATIONS = 100000
     CONVERGENCE_TOLERANCE = 1e-6 
 
     # 1. Create the Master Synchronous Network
-    sync_network = SynchronousNetwork(topology, N_NODES)
+    sync_network = SynchronousNetwork(topology, N_NODES, VALUE_RANGE)
     
     # 2. Create the Async Network (constructor creates random nodes we will replace)
-    async_network = AsynchronousNetwork(topology, N_NODES)
+    async_network = AsynchronousNetwork(topology, N_NODES, VALUE_RANGE)
 
     # 3. CLONE THE TOPOLOGY
     # Create new Node objects for Async so they have independent .value attributes
