@@ -218,19 +218,52 @@ class AsynchronousNetwork(Network):
         random_neighbour.value = average
 
 
+class DifferentialPrivacySynchronousNetwork(SynchronousNetwork):
+    def __init__(self, topology: Topology, n_nodes: int | None = None, value_range: tuple[int, int] = (10, 100), mechanism: str = 'laplace', scale: float = 1.0) -> None:
+        super().__init__(topology, n_nodes, value_range)
+        self.mechanism = mechanism.lower()
+        self.scale = scale
+
+    def _sample_noise(self, size: int) -> np.ndarray:
+        if self.mechanism in ('laplace', 'laplacian'):
+            return np.random.laplace(loc=0.0, scale=self.scale, size=size)
+        elif self.mechanism in ('gaussian', 'normal'):
+            return np.random.normal(loc=0.0, scale=self.scale, size=size)
+        elif self.mechanism in ('uniform',):
+            return np.random.uniform(low=-self.scale, high=self.scale, size=size)
+        else:
+            raise ValueError(f"Unknown mechanism: {self.mechanism}")
+
+    def apply_input_perturbation(self) -> None:
+        """Add one-time noise to the current node values (input perturbation)."""
+        noise = self._sample_noise(len(self.nodes))
+        for i, node in enumerate(self.nodes):
+            node.value = node.value + noise[i]
+
+    def exchange(self) -> None:
+        # Regular synchronous consensus step (no per-iteration DP noise)
+        super().exchange()
+
+
 if __name__ == "__main__":
-    topology = Topology.STAR
+    topology = Topology.TREE
     N_NODES = 30
     # Set the constant range for generating each node's initial value
-    VALUE_RANGE = (10, 10000000)
-    MAX_ITERATIONS = 100000
+    VALUE_RANGE = (10, 100)
+    MAX_ITERATIONS = 1000
     CONVERGENCE_TOLERANCE = 1e-6 
+    # Differential privacy settings
+    DP_MECH = 'laplace'  # options: 'laplace', 'gaussian', 'uniform'
+    DP_NOISE_SCALE = 0.5
 
     # 1. Create the Master Synchronous Network
     sync_network = SynchronousNetwork(topology, N_NODES, VALUE_RANGE)
     
     # 2. Create the Async Network (constructor creates random nodes we will replace)
     async_network = AsynchronousNetwork(topology, N_NODES, VALUE_RANGE)
+
+    # Create the DP synchronous network (will replace nodes with clones below)
+    dp_network = DifferentialPrivacySynchronousNetwork(topology, N_NODES, VALUE_RANGE, mechanism=DP_MECH, scale=DP_NOISE_SCALE)
 
     # 3. CLONE THE TOPOLOGY
     # Create new Node objects for Async so they have independent .value attributes
@@ -244,6 +277,19 @@ if __name__ == "__main__":
             # Connect using the index to find the corresponding 'new' node object
             copy_node.add_neighbour(async_network.nodes[neighbor.index])
 
+    # Clone topology into DP network too
+    dp_network.nodes = [Node(n.index, n.initial_value) for n in sync_network.nodes]
+    for i in range(len(sync_network.nodes)):
+        master_node = sync_network.nodes[i]
+        copy_node = dp_network.nodes[i]
+        for neighbor in master_node.neighbours:
+            copy_node.add_neighbour(dp_network.nodes[neighbor.index])
+
+    # Ensure metadata is synced on DP network
+    dp_network.true_average = sync_network.true_average
+    # Recompute weight matrix now that neighbours match the master topology
+    dp_network.weight_matrix = dp_network.get_weight_matrix()
+
     # Ensure metadata is synced
     async_network.true_average = sync_network.true_average
 
@@ -252,6 +298,10 @@ if __name__ == "__main__":
     sync_network.share_random_numbers()
     for i in range(len(sync_network.nodes)):
         async_network.nodes[i].value = sync_network.nodes[i].value
+        dp_network.nodes[i].value = sync_network.nodes[i].value
+
+    # Apply one-time input perturbation (differential privacy) to DP network
+    dp_network.apply_input_perturbation()
 
     # 5. Independent Execution Loops
     errors_sync = []
@@ -269,10 +319,18 @@ if __name__ == "__main__":
         errors_async.append(async_network.get_max_error())
         if len(errors_async) >= MAX_ITERATIONS: break
 
+    # Run Differential Privacy synchronous until it hits tolerance (or cap)
+    errors_dp = []
+    while dp_network.get_max_error() > CONVERGENCE_TOLERANCE:
+        dp_network.exchange()
+        errors_dp.append(dp_network.get_max_error())
+        if len(errors_dp) >= MAX_ITERATIONS: break
+
     # 6. Final Plotting
     plt.figure(figsize=(12, 7))
     plt.plot(errors_sync, label='ASS Sync', linewidth=1.2, marker='.', markersize=2)
     plt.plot(errors_async, label='ASS Async', linewidth=1.2, marker='.', markersize=2)
+    plt.plot(errors_dp, label=f'ASS DP ({DP_MECH})', linewidth=1.2, marker='.', markersize=2)
     
     plt.yscale('log')
     plt.title(f'Convergence Comparison - {topology.name} Topology')
@@ -285,3 +343,4 @@ if __name__ == "__main__":
 
     print(f"Sync converged in {len(errors_sync)} iterations.")
     print(f"Async converged in {len(errors_async)} iterations.")
+    print(f"DP ({DP_MECH}) converged in {len(errors_dp)} iterations.")
