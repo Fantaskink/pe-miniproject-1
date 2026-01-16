@@ -246,101 +246,112 @@ class DifferentialPrivacySynchronousNetwork(SynchronousNetwork):
 
 
 if __name__ == "__main__":
-    topology = Topology.TREE
-    N_NODES = 30
-    # Set the constant range for generating each node's initial value
+    # --- 1. Global Settings ---
+    topology_type = Topology.RING
+    N_NODES = 1000
     VALUE_RANGE = (10, 100)
-    MAX_ITERATIONS = 1000
+    MAX_ITERATIONS = 100000
     CONVERGENCE_TOLERANCE = 1e-6 
-    # Differential privacy settings
-    DP_MECH = 'laplace'  # options: 'laplace', 'gaussian', 'uniform'
-    DP_NOISE_SCALE = 0.5
+    DP_NOISE_SCALE = 2.0  # Increased slightly to make the "floor" visible
 
-    # 1. Create the Master Synchronous Network
-    sync_network = SynchronousNetwork(topology, N_NODES, VALUE_RANGE)
+    # --- 2. Generate Ground Truth Data ---
+    # We create the original values and the topology once so everyone starts 
+    # from the exact same "true" state.
+    base_network = SynchronousNetwork(topology_type, N_NODES, VALUE_RANGE)
+    true_avg = base_network.true_average
     
-    # 2. Create the Async Network (constructor creates random nodes we will replace)
-    async_network = AsynchronousNetwork(topology, N_NODES, VALUE_RANGE)
+    # Helper to clone the topology (nodes + connections) from the base_network
+    def clone_into(target_net, source_nodes):
+        target_net.nodes = [Node(n.index, n.initial_value) for n in source_nodes]
+        for i in range(len(source_nodes)):
+            for neighbor in source_nodes[i].neighbours:
+                target_net.nodes[i].add_neighbour(target_net.nodes[neighbor.index])
+        if hasattr(target_net, 'get_weight_matrix'):
+            target_net.weight_matrix = target_net.get_weight_matrix()
+        target_net.true_average = true_avg
 
-    # Create the DP synchronous network (will replace nodes with clones below)
-    dp_network = DifferentialPrivacySynchronousNetwork(topology, N_NODES, VALUE_RANGE, mechanism=DP_MECH, scale=DP_NOISE_SCALE)
+    # --- 3. Setup Additive Secret Sharing (ASS) Networks ---
+    # These start with massive errors because of the random number exchange.
+    ass_sync = SynchronousNetwork(topology_type, N_NODES, VALUE_RANGE)
+    clone_into(ass_sync, base_network.nodes)
+    ass_sync.share_random_numbers() # This "scrambles" the values
 
-    # 3. CLONE THE TOPOLOGY
-    # Create new Node objects for Async so they have independent .value attributes
-    async_network.nodes = [Node(n.index, n.initial_value) for n in sync_network.nodes]
-    
-    # Mirror the neighbor connections exactly from the sync_network
-    for i in range(len(sync_network.nodes)):
-        master_node = sync_network.nodes[i]
-        copy_node = async_network.nodes[i]
-        for neighbor in master_node.neighbours:
-            # Connect using the index to find the corresponding 'new' node object
-            copy_node.add_neighbour(async_network.nodes[neighbor.index])
+    ass_async = AsynchronousNetwork(topology_type, N_NODES, VALUE_RANGE)
+    clone_into(ass_async, base_network.nodes)
+    # Copy the scrambled values from ass_sync so we compare sync vs async on same data
+    for i in range(N_NODES):
+        ass_async.nodes[i].value = ass_sync.nodes[i].value
 
-    # Clone topology into DP network too
-    dp_network.nodes = [Node(n.index, n.initial_value) for n in sync_network.nodes]
-    for i in range(len(sync_network.nodes)):
-        master_node = sync_network.nodes[i]
-        copy_node = dp_network.nodes[i]
-        for neighbor in master_node.neighbours:
-            copy_node.add_neighbour(dp_network.nodes[neighbor.index])
+    # --- 4. Setup Differential Privacy (DP) Networks ---
+    # These start with low error (just the original values + a bit of noise).
+    dp_mechanisms = ['laplace', 'gaussian', 'uniform']
+    dp_networks: dict[str, DifferentialPrivacySynchronousNetwork] = {}
 
-    # Ensure metadata is synced on DP network
-    dp_network.true_average = sync_network.true_average
-    # Recompute weight matrix now that neighbours match the master topology
-    dp_network.weight_matrix = dp_network.get_weight_matrix()
+    for mech in dp_mechanisms:
+        dp_net = DifferentialPrivacySynchronousNetwork(topology_type, N_NODES, mechanism=mech, scale=DP_NOISE_SCALE)
+        clone_into(dp_net, base_network.nodes)
+        # Apply noise to the CLEAN initial values (NOT the scrambled ASS values)
+        dp_net.apply_input_perturbation()
+        dp_networks[mech] = dp_net
 
-    # Ensure metadata is synced
-    async_network.true_average = sync_network.true_average
+    # --- 5. Execution Loops ---
+    results = {
+        "ASS Sync": [],
+        "ASS Async": []
+    }
+    for mech in dp_mechanisms:
+        results[f"DP: {mech.capitalize()}"] = []
 
-    # 4. Perform Secret Sharing on Sync and copy resulting state to Async
-    # This ensures both start from the exact same "secret shared" values
-    sync_network.share_random_numbers()
-    for i in range(len(sync_network.nodes)):
-        async_network.nodes[i].value = sync_network.nodes[i].value
-        dp_network.nodes[i].value = sync_network.nodes[i].value
+    # Run ASS Sync
+    while ass_sync.get_max_error() > CONVERGENCE_TOLERANCE and len(results["ASS Sync"]) < MAX_ITERATIONS:
+        ass_sync.exchange()
+        results["ASS Sync"].append(ass_sync.get_max_error())
 
-    # Apply one-time input perturbation (differential privacy) to DP network
-    dp_network.apply_input_perturbation()
+    # Run ASS Async
+    while ass_async.get_max_error() > CONVERGENCE_TOLERANCE and len(results["ASS Async"]) < MAX_ITERATIONS:
+        ass_async.exchange()
+        results["ASS Async"].append(ass_async.get_max_error())
 
-    # 5. Independent Execution Loops
-    errors_sync = []
-    errors_async = []
+    # Run DP Networks
+    for mech, net in dp_networks.items():
+        label = f"DP: {mech.capitalize()}"
+        while net.get_max_error() > CONVERGENCE_TOLERANCE and len(results[label]) < MAX_ITERATIONS:
+            net.exchange()
+            results[label].append(net.get_max_error())
 
-    # Run Synchronous until it hits tolerance
-    while sync_network.get_max_error() > CONVERGENCE_TOLERANCE:
-        sync_network.exchange()
-        errors_sync.append(sync_network.get_max_error())
-        if len(errors_sync) >= MAX_ITERATIONS: break
-
-    # Run Asynchronous until it hits tolerance
-    while async_network.get_max_error() > CONVERGENCE_TOLERANCE:
-        async_network.exchange()
-        errors_async.append(async_network.get_max_error())
-        if len(errors_async) >= MAX_ITERATIONS: break
-
-    # Run Differential Privacy synchronous until it hits tolerance (or cap)
-    errors_dp = []
-    while dp_network.get_max_error() > CONVERGENCE_TOLERANCE:
-        dp_network.exchange()
-        errors_dp.append(dp_network.get_max_error())
-        if len(errors_dp) >= MAX_ITERATIONS: break
-
-    # 6. Final Plotting
+    # --- 6. Visualization ---
     plt.figure(figsize=(12, 7))
-    plt.plot(errors_sync, label='ASS Sync', linewidth=1.2, marker='.', markersize=2)
-    plt.plot(errors_async, label='ASS Async', linewidth=1.2, marker='.', markersize=2)
-    plt.plot(errors_dp, label=f'ASS DP ({DP_MECH})', linewidth=1.2, marker='.', markersize=2)
     
+    # Plot ASS (High start, goes to zero)
+    plt.plot(results["ASS Sync"], label='ASS (Synchronous)', color='blue', linewidth=2)
+    plt.plot(results["ASS Async"], label='ASS (Asynchronous)', color='cyan', linestyle=':', alpha=0.8)
+
+    # Plot DP (Low start, hits a floor)
+    mech_styles = {
+        'DP: Laplace': {'color': 'red', 'ls': '--'},
+        'DP: Gaussian': {'color': 'green', 'ls': '-.'},
+        'DP: Uniform': {'color': 'purple', 'ls': '--', 'alpha': 0.6},
+    }
+    
+    for label, data in results.items():
+        if "DP" in label:
+            style = mech_styles.get(label, {})
+            plt.plot(data, label=label, **style)
+
     plt.yscale('log')
-    plt.title(f'Convergence Comparison - {topology.name} Topology')
-    plt.xlabel('Iterations')
-    plt.ylabel('Maximum Error (Log Scale)')
+    plt.grid(True, which="both", ls="-", alpha=0.2)
+    plt.title(f"Privacy-Preserving Consensus: {topology_type.name} Topology\n(ASS Scrambling vs. DP Perturbation)")
+    plt.xlabel("Iterations")
+    plt.ylabel("Maximum Error (Log Scale)")
     plt.legend()
-    plt.grid(True, which="both", ls=":", alpha=0.5)
+    
+    # Text Annotation to explain the graph
+    #plt.text(len(results["ASS Sync"])*0.05, 10**-5, 
+    #         "ASS: High initial error\nbut converges to 0", color='blue', fontsize=10)
+    #plt.text(len(results["ASS Sync"])*0.6, DP_NOISE_SCALE*0.1, 
+    #         "DP: Low initial error\nbut hits noise floor", color='red', fontsize=10)
+
     plt.tight_layout()
     plt.show()
 
-    print(f"Sync converged in {len(errors_sync)} iterations.")
-    print(f"Async converged in {len(errors_async)} iterations.")
-    print(f"DP ({DP_MECH}) converged in {len(errors_dp)} iterations.")
+    print(f"Simulation Complete. True Average was: {true_avg:.4f}")
